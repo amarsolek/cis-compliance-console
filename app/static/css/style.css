@@ -315,6 +315,7 @@ code, .mono { font-family: var(--mono); }
 
 .control-tag.pass { background: var(--pass-bg); color: var(--pass); }
 .control-tag.fail { background: var(--sev-high-bg); color: var(--sev-high); }
+.control-tag.warn { background: var(--sev-medium-bg); color: var(--sev-medium); }
 
 .control-body .control-title {
   font-weight: 600;
@@ -406,4 +407,83 @@ code, .mono { font-family: var(--mono); }
 
 .sim-badge.auto-badge {
   background: var(--pass-bg);
-  c
+  color: var(--pass);
+  border-color: var(--pass);
+}
+
+.chart-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 16px;
+  margin-bottom: 36px;
+}
+
+.chart-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+
+.chart-card-wide {
+  min-width: 0;
+}
+
+.chart-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* ---------- Weekly report page ---------- */
+
+.report-meta {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 13px;
+  margin-bottom: 22px;
+}
+
+.report-range-links {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.report-range-links a {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+.report-range-links a.active {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.email-status {
+  margin-top: 28px;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 900px) {
+  .chart-panel { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .summary-strip { grid-template-columns: repeat(2, 1fr); }
+  .control-row { grid-template-columns: 70px 1fr 70px; }
+  .fleet-table { font-size: 13px; }
+}

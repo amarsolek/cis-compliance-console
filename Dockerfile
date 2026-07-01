@@ -13,4 +13,8 @@ ENV FLASK_DEBUG=false
 ENV USE_SERVICENOW_SIMULATOR=true
 ENV USE_MERAKI_SIMULATOR=true
 ENV AUTO_REMEDIATE=true
-E
+ENV ENABLE_SCHEDULER=false
+
+EXPOSE 5000
+
+CMD ["gunicorn", "server:app", "--bind", "0.0.0.0:5000", "--workers", "2"]
