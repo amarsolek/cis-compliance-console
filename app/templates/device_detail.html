@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ report.name }} — CIS v8 Compliance Detail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="shell">
+
+    <a href="/" class="back-link">&larr; Back to fleet</a>
+
+    {% if report.error %}
+      <div class="error-banner">⚠ {{ report.error }}</div>
+    {% endif %}
+
+    <div class="device-header">
+      <div>
+        <h1>{{ report.name }}</h1>
+        <div class="device-meta">{{ report.host }} &middot; {{ report.site }} &middot; scanned {{ report.generated_at }}</div>
+      </div>
+      {% if not report.error %}
+      <div style="text-align:right;">
+        <div class="summary-cell" style="background:none; padding:0;">
+          <div class="label">Weighted Score</div>
+          <div class="value {% if report.weighted_score_pct < 70 %}high{% else %}pass{% endif %}">{{ report.weighted_score_pct }}<span class="unit">%</span></div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if device_remediations %}
+    <div class="control-group">
+      <div class="control-group-title">Remediation History ({{ device_remediations | length }})</div>
+      {% for rec in device_remediations | sort(attribute='applied_at', reverse=True) %}
+      <div class="control-row">
+        <span class="control-tag {% if rec.action == 'auto_applied' %}pass{% else %}fail{% endif %}">
+          {% if rec.action == 'auto_applied' %}FIXED{% elif rec.action == 'attempt_failed' %}RETRY{% else %}OPEN{% endif %}
+        </span>
+        <div class="control-body">
+          <div class="control-title">
+            {{ rec.title }}
+            <span class="severity-pill {{ rec.severity }}">{{ rec.severity }}</span>
+          </div>
+          <div class="control-id">{{ rec.control_id }} &middot; {{ rec.applied_at }} &middot; change ticket {{ rec.change_ticket or '—' }}</div>
+          <div class="control-evidence">{{ rec.evidence_before }}</div>
+          {% if rec.action == 'auto_applied' %}
+          <div class="control-remediation">
+            <div class="remediation-label">Applied automatically</div>
+            <pre>{{ rec.remediation_text }}</pre>
+          </div>
+          {% else %}
+          <div class="control-remediation">
+            <div class="remediation-label">Awaiting engineer action{% if rec.note %} &mdash; {{ rec.note }}{% endif %}</div>
+            <pre>{{ rec.remediation_text }}</pre>
+          </div>
+          {% endif %}
+        </div>
+        <span class="control-id" style="text-align:right;">{{ rec.cis_safeguard }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not report.error %}
+    <div class="control-group">
+      <div class="control-group-title">Failed Controls ({{ report.failed }})</div>
+      {% for r in report.results if not r.passed %}
+      <div class="control-row">
+        <span class="control-tag fail">FAIL</span>
+        <div class="control-body">
+          <div class="control-title">
+            {{ r.title }}
+            <span class="severity-pill {{ r.severity }}">{{ r.severity }}</span>
+          </div>
+          <div class="control-id">{{ r.control_id }} &middot; CIS v8 Safeguard {{ r.cis_safeguard }}</div>
+          <div class="control-evidence">{{ r.evidence }}</div>
+          {% if r.remediation %}
+          <div class="control-remediation">
+            <div class="remediation-label">Suggested remediation</div>
+            <pre>{{ r.remediation }}</pre>
+          </div>
+          {% endif %}
+        </div>
+        <span class="control-id" style="text-align:right;">{{ r.cis_safeguard }}</span>
+      </div>
+      {% else %}
+      <p style="color: var(--pass); font-family: var(--mono); font-size: 13px;">✓ No failed controls — device passes all {{ report.total_controls }} checks.</p>
+      {% endfor %}
+    </div>
+
+    <div class="control-group">
+      <div class="control-group-title">Passed Controls ({{ report.passed }})</div>
+      {% for r in report.results if r.passed %}
+      <div class="control-row">
+        <span class="control-tag pass">PASS</span>
+        <div class="control-body">
+          <div class="control-title">
+            {{ r.title }}
+            <span class="severity-pill {{ r.severity }}">{{ r.severity }}</span>
+          </div>
+          <div class="control-id">{{ r.control_id }} &middot; CIS v8 Safeguard {{ r.cis_safeguard }}</div>
+          <div class="control-evidence">{{ r.evidence }}</div>
+        </div>
+        <span class="control-id" style="text-align:right;">{{ r.cis_safeguard }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="footer-note">
+      # Evidence lines are extracted directly from `show running-config` text.<br>
+      # Remediation snippets are suggested CLI; review before applying to a live device.<br>
+      # API: GET /api/remediations?host={{ report.host }}
+    </div>
+
+  </div>
+</body>
+</html>

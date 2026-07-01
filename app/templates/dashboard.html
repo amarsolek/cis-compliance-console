@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CIS v8 Network Compliance Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="shell">
+
+    <div class="topbar">
+      <div class="brand">
+        <span class="dot"></span>
+        <div>
+          <h1>CIS v8 Network Compliance Console</h1>
+          <div class="subtitle">Cisco IOS / NX-OS &middot; {{ total_controls }} controls evaluated</div>
+        </div>
+      </div>
+      <div class="meta">
+        Last scan: {{ scanned_at }}
+        {% if simulator_mode %}<span class="sim-badge">SIMULATED FLEET</span>{% endif %}
+        {% if auto_remediate %}<span class="sim-badge auto-badge">AUTO-REMEDIATE ON</span>{% endif %}
+        <br><a href="/reports/weekly" class="nav-link">Weekly remediation report &rarr;</a>
+      </div>
+    </div>
+
+    <div class="summary-strip">
+      <div class="summary-cell">
+        <div class="label">Devices Scanned</div>
+        <div class="value">{{ summary.reachable_count }}<span class="unit">/ {{ summary.device_count }}</span></div>
+      </div>
+      <div class="summary-cell">
+        <div class="label">Fleet Avg Score</div>
+        <div class="value {% if summary.avg_weighted_score_pct < 70 %}high{% else %}pass{% endif %}">{{ summary.avg_weighted_score_pct }}<span class="unit">%</span></div>
+      </div>
+      <div class="summary-cell">
+        <div class="label">Failed Controls</div>
+        <div class="value">{{ summary.total_failed_controls }}</div>
+      </div>
+      <div class="summary-cell">
+        <div class="label">High-Severity Findings</div>
+        <div class="value {% if summary.high_severity_failures > 0 %}high{% endif %}">{{ summary.high_severity_failures }}</div>
+      </div>
+      <div class="summary-cell">
+        <div class="label">Lowest Scoring Device</div>
+        <div class="value" style="font-size: 16px; font-weight: 600;">{{ summary.worst_device or '—' }}</div>
+      </div>
+    </div>
+
+    <div class="actions-row">
+      <h2>Remediation Overview</h2>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-card">
+        <div class="chart-title">Remediation status (all-time)</div>
+        <canvas id="remediationPie" height="220"></canvas>
+      </div>
+      <div class="chart-card chart-card-wide">
+        <div class="chart-title">Remediation activity, trailing 30 days</div>
+        <canvas id="remediationTrend" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="actions-row">
+      <h2>Fleet Inventory</h2>
+      <button class="btn-rescan" id="rescanBtn" onclick="rescan()">↻ Re-scan &amp; remediate fleet now</button>
+    </div>
+
+    <table class="fleet-table">
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th>Site</th>
+          <th>Weighted Score</th>
+          <th>Controls Failed</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+        <tr class="device-row" onclick="window.location.href='/device/{{ r.host }}'">
+          <td>
+            <div class="device-name">{{ r.name }}</div>
+            <div class="device-host">{{ r.host }}</div>
+          </td>
+          <td class="device-site">{{ r.site }}</td>
+          <td>
+            {% if r.error %}
+              <span class="fail-count">—</span>
+            {% else %}
+            <div class="score-bar-wrap">
+              <div class="score-bar-track">
+                <div class="score-bar-fill" style="width: {{ r.weighted_score_pct }}%; background: {% if r.weighted_score_pct >= 85 %}var(--pass){% elif r.weighted_score_pct >= 60 %}var(--sev-medium){% else %}var(--sev-high){% endif %};"></div>
+              </div>
+              <span class="score-num">{{ r.weighted_score_pct }}%</span>
+            </div>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.error %}
+              <span class="fail-count">—</span>
+            {% else %}
+              <span class="fail-count"><span class="n">{{ r.failed }}</span> / {{ r.total_controls }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.error %}
+              <span class="status-chip err">UNREACHABLE</span>
+            {% elif r.weighted_score_pct >= 85 %}
+              <span class="status-chip ok">COMPLIANT</span>
+            {% elif r.weighted_score_pct >= 60 %}
+              <span class="status-chip warn">PARTIAL</span>
+            {% else %}
+              <span class="status-chip crit">NON-COMPLIANT</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="actions-row">
+      <h2>Cisco Meraki Fleet &mdash; Firmware Compliance</h2>
+    </div>
+    {% if meraki.error %}
+      <div class="error-banner">⚠ Meraki API error: {{ meraki.error }}</div>
+    {% else %}
+    <table class="fleet-table">
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th>Model</th>
+          <th>Network</th>
+          <th>Current Firmware</th>
+          <th>Latest Firmware</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in meraki.devices %}
+        <tr>
+          <td>
+            <div class="device-name">{{ d.name }}</div>
+            <div class="device-host">{{ d.serial }}</div>
+          </td>
+          <td class="device-site">{{ d.model }}</td>
+          <td class="device-site">{{ d.network }}</td>
+          <td class="fail-count">{{ d.current_version }}</td>
+          <td class="fail-count">{{ d.latest_version }}</td>
+          <td>
+            {% if d.compliant %}
+              <span class="status-chip ok">UP TO DATE</span>
+            {% else %}
+              <span class="status-chip crit">UPGRADE AVAILABLE</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="footer-note" style="margin-top:8px;">
+      {{ meraki.compliant }} / {{ meraki.total }} Meraki switches on the latest available stable firmware.
+      {% if meraki_simulator_mode %}<span class="sim-badge">SIMULATED MERAKI ORG</span>{% endif %}
+      &middot; API: GET /api/meraki-compliance
+    </div>
+    {% endif %}
+
+    <div class="footer-note">
+      # Severity weighting: high=5, medium=3, low=1. Weighted score = (earned weight / max weight) * 100.<br>
+      # Click any device row for the full per-control breakdown, remediation history, and remediation snippets.<br>
+      {% if auto_remediate %}# Auto-remediation is ON: safe/well-defined findings are fixed immediately and logged with a ServiceNow change request; everything else opens a change request for a network engineer.<br>{% endif %}
+      # API: GET /api/reports &middot; GET /api/controls &middot; POST /api/scan &middot; GET /api/remediations &middot; GET /api/remediation-summary &middot; GET/POST /api/weekly-report &middot; GET /api/meraki-compliance
+    </div>
+
+  </div>
+
+  <script>
+    async function rescan() {
+      const btn = document.getElementById('rescanBtn');
+      btn.disabled = true;
+      btn.textContent = '↻ Scanning & remediating…';
+      try {
+        await fetch('/api/scan', { method: 'POST' });
+        window.location.reload();
+      } catch (e) {
+        btn.textContent = '↻ Re-scan failed — retry';
+        btn.disabled = false;
+      }
+    }
+
+    const chartColors = {
+      auto: '#3FB68B',
+      manual: '#F2A93B',
+      failed: '#E5484D',
+      grid: '#232A34',
+      text: '#8B949E',
+    };
+
+    const breakdown = {{ remediation_breakdown | tojson }};
+    new Chart(document.getElementById('remediationPie'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Auto-remediated', 'Needs engineer action', 'Attempted (unresolved)'],
+        datasets: [{
+          data: [breakdown.auto_applied || 0, breakdown.manual_pending || 0, breakdown.attempt_failed || 0],
+          backgroundColor: [chartColors.auto, chartColors.manual, chartColors.failed],
+          borderColor: '#161B22',
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        plugins: { legend: { position: 'bottom', labels: { color: chartColors.text, font: { size: 11 } } } },
+      },
+    });
+
+    const trend = {{ remediation_trend | tojson }};
+    new Chart(document.getElementById('remediationTrend'), {
+      type: 'line',
+      data: {
+        labels: trend.labels,
+        datasets: [
+          {
+            label: 'Auto-remediated',
+            data: trend.auto_applied,
+            borderColor: chartColors.auto,
+            backgroundColor: chartColors.auto,
+            tension: 0.25,
+          },
+          {
+            label: 'Needs engineer action',
+            data: trend.manual_pending,
+            borderColor: chartColors.manual,
+            backgroundColor: chartColors.manual,
+            tension: 0.25,
+          },
+        ],
+      },
+      options: {
+        scales: {
+          x: { ticks: { color: chartColors.text, font: { size: 10 } }, grid: { color: chartColors.grid } },
+          y: { beginAtZero: true, ticks: { color: chartColors.text, precision: 0 }, grid: { color: chartColors.grid } },
+        },
+        plugins: { legend: { position: 'bottom', labels: { color: chartColors.text, font: { size: 11 } } } },
+      },
+    });
+  </script>
+</body>
+</html>
