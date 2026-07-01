@@ -7,7 +7,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+  <!-- Chart.js is vendored locally (app/static/js/chart.umd.js) rather than
+       loaded from a CDN, so the remediation charts don't depend on an
+       external host being reachable from the browser -- a CDN block/outage
+       (corporate proxy, ad blocker, regional network policy) would otherwise
+       leave the charts silently blank with no error visible on the page. -->
+  <script src="{{ url_for('static', filename='js/chart.umd.js') }}"></script>
 </head>
 <body>
   <div class="shell">
@@ -66,10 +71,12 @@
       <div class="chart-card">
         <div class="chart-title">Remediation status (all-time)</div>
         <canvas id="remediationPie" height="220"></canvas>
+        <p id="pieChartError" class="chart-error" style="display:none;"></p>
       </div>
       <div class="chart-card chart-card-wide">
         <div class="chart-title">Remediation activity, trailing 30 days</div>
         <canvas id="remediationTrend" height="220"></canvas>
+        <p id="trendChartError" class="chart-error" style="display:none;"></p>
       </div>
     </div>
 
@@ -237,52 +244,74 @@
     };
 
     const breakdown = {{ remediation_breakdown | tojson }};
-    new Chart(document.getElementById('remediationPie'), {
-      type: 'doughnut',
-      data: {
-        labels: ['Auto-remediated', 'Needs engineer action', 'Attempted (unresolved)'],
-        datasets: [{
-          data: [breakdown.auto_applied || 0, breakdown.manual_pending || 0, breakdown.attempt_failed || 0],
-          backgroundColor: [chartColors.auto, chartColors.manual, chartColors.failed],
-          borderColor: '#161B22',
-          borderWidth: 2,
-        }],
-      },
-      options: {
-        plugins: { legend: { position: 'bottom', labels: { color: chartColors.text, font: { size: 11 } } } },
-      },
-    });
-
     const trend = {{ remediation_trend | tojson }};
-    new Chart(document.getElementById('remediationTrend'), {
-      type: 'line',
-      data: {
-        labels: trend.labels,
-        datasets: [
-          {
-            label: 'Auto-remediated',
-            data: trend.auto_applied,
-            borderColor: chartColors.auto,
-            backgroundColor: chartColors.auto,
-            tension: 0.25,
+
+    // Defensive: if Chart.js failed to load or load in time for any reason
+    // (e.g. a static file misconfiguration), show a visible message instead
+    // of silently leaving the panel blank -- makes this failure mode
+    // debuggable from the page itself, not just the browser console.
+    if (typeof Chart === 'undefined') {
+      document.getElementById('pieChartError').textContent = 'Chart library failed to load -- check that /static/js/chart.umd.js is reachable.';
+      document.getElementById('pieChartError').style.display = 'block';
+      document.getElementById('trendChartError').textContent = 'Chart library failed to load -- check that /static/js/chart.umd.js is reachable.';
+      document.getElementById('trendChartError').style.display = 'block';
+    } else {
+      try {
+        new Chart(document.getElementById('remediationPie'), {
+          type: 'doughnut',
+          data: {
+            labels: ['Auto-remediated', 'Needs engineer action', 'Attempted (unresolved)'],
+            datasets: [{
+              data: [breakdown.auto_applied || 0, breakdown.manual_pending || 0, breakdown.attempt_failed || 0],
+              backgroundColor: [chartColors.auto, chartColors.manual, chartColors.failed],
+              borderColor: '#161B22',
+              borderWidth: 2,
+            }],
           },
-          {
-            label: 'Needs engineer action',
-            data: trend.manual_pending,
-            borderColor: chartColors.manual,
-            backgroundColor: chartColors.manual,
-            tension: 0.25,
+          options: {
+            plugins: { legend: { position: 'bottom', labels: { color: chartColors.text, font: { size: 11 } } } },
           },
-        ],
-      },
-      options: {
-        scales: {
-          x: { ticks: { color: chartColors.text, font: { size: 10 } }, grid: { color: chartColors.grid } },
-          y: { beginAtZero: true, ticks: { color: chartColors.text, precision: 0 }, grid: { color: chartColors.grid } },
-        },
-        plugins: { legend: { position: 'bottom', labels: { color: chartColors.text, font: { size: 11 } } } },
-      },
-    });
+        });
+      } catch (e) {
+        document.getElementById('pieChartError').textContent = 'Could not render chart: ' + e.message;
+        document.getElementById('pieChartError').style.display = 'block';
+      }
+
+      try {
+        new Chart(document.getElementById('remediationTrend'), {
+          type: 'line',
+          data: {
+            labels: trend.labels,
+            datasets: [
+              {
+                label: 'Auto-remediated',
+                data: trend.auto_applied,
+                borderColor: chartColors.auto,
+                backgroundColor: chartColors.auto,
+                tension: 0.25,
+              },
+              {
+                label: 'Needs engineer action',
+                data: trend.manual_pending,
+                borderColor: chartColors.manual,
+                backgroundColor: chartColors.manual,
+                tension: 0.25,
+              },
+            ],
+          },
+          options: {
+            scales: {
+              x: { ticks: { color: chartColors.text, font: { size: 10 } }, grid: { color: chartColors.grid } },
+              y: { beginAtZero: true, ticks: { color: chartColors.text, precision: 0 }, grid: { color: chartColors.grid } },
+            },
+            plugins: { legend: { position: 'bottom', labels: { color: chartColors.text, font: { size: 11 } } } },
+          },
+        });
+      } catch (e) {
+        document.getElementById('trendChartError').textContent = 'Could not render chart: ' + e.message;
+        document.getElementById('trendChartError').style.display = 'block';
+      }
+    }
   </script>
 </body>
 </html>
