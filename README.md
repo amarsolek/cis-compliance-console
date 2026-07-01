@@ -28,7 +28,7 @@ python server.py
 
 Open **http://localhost:5000**. The dashboard auto-runs an initial scan of the 3 simulated switches on first load, and — because `AUTO_REMEDIATE` defaults to `true` — immediately fixes whatever it safely can and opens simulated ServiceNow change requests for everything else. Click any device row to see its full 33-control breakdown, remediation snippets, and remediation history. Use **"Re-scan & remediate fleet now"** to re-pull, re-fix, and re-score on demand.
 
-If the **Remediation Overview** pie/line charts look empty (e.g. right after a fresh deploy, or after a Render free-tier cold start before a real scan has run), click **"Seed 30 days of demo history"** on the dashboard — see [Demo data seeding](#demo-data-seeding-for-the-charts) below.
+The **Remediation Overview** pie/line charts are populated automatically at startup (see [Demo data is seeded automatically at startup](#demo-data-is-seeded-automatically-at-startup)) — they should never look empty, including right after a fresh deploy or a Render free-tier cold start.
 
 > **Why `server.py` and not `app.py`?** The Flask entrypoint is named `server.py` deliberately, not `app.py`, because this project also has a folder named `app/` (containing `device_client.py`, `scoring.py`, `checks/`, etc.). Naming the entrypoint `app.py` creates a name collision with the `app/` package — `python app.py` happens to work locally, but `gunicorn app:app` (used in Docker/Render deploys) resolves the import to the *folder* instead of the file and fails with `Failed to find attribute 'app' in 'app'`. Keeping the entrypoint as `server.py` avoids the collision everywhere, including in Docker-based deploys.
 
@@ -46,6 +46,7 @@ pytest tests/ -v
 | `PORT` | `5000` | Port Flask/Gunicorn binds to |
 | `USE_SIMULATOR` | `true` | `false` switches the device fleet to real-device mode via Netmiko |
 | `AUTO_REMEDIATE` | `true` | `false` reverts to score-only (read-only) behavior, no config pushes |
+| `AUTO_SEED_DEMO_DATA` | `true` | `false` disables automatic demo-data seeding at startup (see below) |
 | `FLASK_DEBUG` | `true` | Set `false` in any shared/deployed environment |
 | `DEVICE_HOSTS` | _(unset)_ | Comma-separated IPs/hostnames, real-device mode only |
 | `DEVICE_USERNAME` / `DEVICE_PASSWORD` / `DEVICE_ENABLE_SECRET` | _(unset)_ | SSH credentials, real-device mode only |
@@ -96,25 +97,34 @@ The dashboard's **Remediation Overview** section shows:
 - A **pie chart** of all-time remediation status (auto-fixed / needs engineer action / attempted-but-unresolved).
 - A **30-day line chart** of daily auto-fixed vs. pending-action counts.
 
-Both are fed by `GET /api/remediation-summary` and are empty until at least one real scan-and-remediate cycle has produced data — which, on a host like Render's free tier where the in-memory state resets on every cold start, can mean the charts look empty right after a fresh deploy even though everything is wired correctly.
+Both are fed by `GET /api/remediation-summary`, which reads an in-memory log that starts empty until either a real scan-and-remediate cycle runs, or demo data is seeded (see immediately below).
 
-### Demo data seeding (for the charts)
+### Demo data is seeded automatically at startup
 
-Click **"Seed 30 days of demo history"** on the dashboard, or call:
+`AUTO_SEED_DEMO_DATA` (default `true`, simulator-only) backfills 30 days of clearly-labeled synthetic remediation history **the moment the app process boots**, so the charts are never empty — no button click required.
+
+This matters more than it sounds like it should, for two reasons that both bit this exact feature in testing:
+
+1. **Multiple Gunicorn workers.** The Dockerfile/Procfile run `--workers 2`, and this app's remediation log is a plain in-memory Python list — each worker process has its own separate copy. A single `POST /api/seed-demo-data` click only reaches whichever one worker handles that request; a page load that happens to land on the *other* worker still sees an empty log and an empty chart. This is the actual reason the charts could still look empty after clicking "Seed" on a real deployment.
+2. **Render's free tier spins down** after inactivity, and the next request cold-starts a brand-new process with an empty log again.
+
+Seeding at **import time** (i.e., once per worker process, as soon as it starts) means every worker has data from its very first request, regardless of which worker a given request lands on — verified by booting the app with `gunicorn --workers 2` (matching the Dockerfile exactly) and confirming `/api/remediation-summary` returns identical non-empty data across ten round-robined requests with no manual seeding step at all.
+
+Real scan-and-remediate activity (from `AUTO_REMEDIATE`) is layered on top of the seeded data the same way it always was. Seeded rows stay clearly tagged `[DEMO]` in their note field and use `CHG-DEMO-####` ticket numbers everywhere in the UI, so they're never confused with a real remediation event or a real ServiceNow ticket, and never touch actual device config or the real ServiceNow ticket queue. A banner appears on the dashboard whenever demo data is present. If a real 7/30/90-day weekly report or email is generated while demo data is present, it will include the demo rows too (visible via their `CHG-DEMO-####` ticket numbers in that table) — clear demo data first if you want a weekly report that reflects only real activity.
+
+You can still seed or top up manually:
 
 ```
 POST /api/seed-demo-data?days=30
 ```
 
-This backfills a realistic-looking, front-loaded-then-tapering 30 days of remediation activity into the same in-memory log the charts read from, using real control titles/severities pulled from the live rule engine — so the charts render immediately. Every seeded record is clearly tagged `[DEMO]` in its note field and uses `CHG-DEMO-####` ticket numbers so it's never confused with a real remediation event or a real ServiceNow ticket; it never touches actual device config or the real ServiceNow ticket queue. A banner appears on the dashboard whenever demo data is present.
-
-Remove it with:
+(also available as the **"Seed 30 days of demo history"** button on the dashboard, which appears when there's no data at all — e.g. if `AUTO_SEED_DEMO_DATA=false`). Remove all seeded data with:
 
 ```
 POST /api/clear-demo-data
 ```
 
-which strips only the `[DEMO]`-tagged records and leaves any real remediation history untouched. Both endpoints are simulator-only (`USE_SIMULATOR=true`) and return `403` otherwise, since seeding fake history against a real fleet's audit trail would be actively misleading.
+which strips only the `[DEMO]`-tagged records and leaves any real remediation history untouched. Both endpoints — and the startup auto-seed — are simulator-only (`USE_SIMULATOR=true`) and return `403` (or no-op) otherwise, since seeding fake history against a real fleet's audit trail would be actively misleading. Set `AUTO_SEED_DEMO_DATA=false` if you'd rather the charts start genuinely empty until a real scan runs.
 
 ---
 
@@ -142,7 +152,7 @@ This is a standard Flask + Gunicorn app with no database, so it deploys cleanly 
 3. Build command: `pip install -r requirements.txt`
 4. Start command: `gunicorn server:app --bind 0.0.0.0:$PORT`
 5. Leave `USE_SIMULATOR=true`, `USE_SERVICENOW_SIMULATOR=true`, `USE_MERAKI_SIMULATOR=true` (defaults) so the demo works without any real credentials. Deploy — you'll get a public `https://*.onrender.com` URL to share.
-6. Optional: add a Render **Cron Job** hitting `POST /api/weekly-report` weekly, and use the dashboard's "Seed 30 days of demo history" button (or `POST /api/seed-demo-data`) after each fresh deploy/cold start so the charts aren't empty.
+6. Optional: add a Render **Cron Job** hitting `POST /api/weekly-report` weekly. The charts populate themselves automatically on every deploy/cold start (`AUTO_SEED_DEMO_DATA=true` by default) — no manual step needed.
 
 ### Option B — Docker (any cloud: ECS, Cloud Run, Azure Container Apps, on-prem)
 ```bash

@@ -33,6 +33,33 @@ _LAST_SCAN = {"reports": [], "summary": {}, "scanned_at": None}
 # tool's original read-only behavior.
 AUTO_REMEDIATE = os.environ.get("AUTO_REMEDIATE", "true").lower() != "false"
 
+# Seed 30 days of clearly-labeled synthetic remediation history at process
+# startup so the dashboard's pie/line charts never render empty -- this is
+# what actually fixes "the charts show nothing on Render," not just the
+# manual seed button. Two things make that manual button alone insufficient
+# on a real deployment:
+#
+#   1. Gunicorn runs multiple worker *processes* (see Procfile/Dockerfile,
+#      --workers 2), and this app's remediation log is an in-memory Python
+#      list -- each worker has its own separate copy. Clicking "Seed" sends
+#      one POST request that only one worker handles, so only that worker's
+#      copy gets filled; a page load that happens to land on a different
+#      worker still sees an empty log and an empty chart.
+#   2. Render's free tier spins the whole service down after inactivity;
+#      the next request cold-starts a fresh process with an empty log again.
+#
+# Seeding at *import time* (module load = once per worker process boot)
+# means every worker independently has data from its very first request
+# onward, regardless of which worker load balancing picks. Real scan
+# activity (from AUTO_REMEDIATE above) is added on top of this the same
+# way it always was; seeded rows stay clearly tagged "[DEMO]" everywhere
+# in the UI and can be removed with POST /api/clear-demo-data. Set
+# AUTO_SEED_DEMO_DATA=false to disable and start with genuinely empty
+# charts until a real scan runs.
+AUTO_SEED_DEMO_DATA = os.environ.get("AUTO_SEED_DEMO_DATA", "true").lower() != "false"
+if AUTO_SEED_DEMO_DATA and device_client.USE_SIMULATOR and not remediation.get_remediation_log():
+    remediation.seed_demo_trend(days=30)
+
 
 def _run_full_scan():
     inventory = device_client.list_inventory()
@@ -170,7 +197,9 @@ def api_seed_demo_data():
     handy right after a fresh deploy, or on Render's free tier where a
     cold start wipes the in-memory remediation log. Simulator-only: this
     is a display aid, not something that should ever run against a real
-    fleet's history.
+    fleet's history. Note this only seeds the worker process that handles
+    this request; AUTO_SEED_DEMO_DATA (see server.py top) is what makes
+    every worker have data by default without needing this endpoint.
     """
     if not device_client.USE_SIMULATOR:
         return jsonify({"error": "Demo data seeding is only available in simulator mode (USE_SIMULATOR=true)."}), 403
@@ -186,7 +215,8 @@ def api_seed_demo_data():
 @app.route("/api/clear-demo-data", methods=["POST"])
 def api_clear_demo_data():
     """Remove only the synthetic demo records seeded above, leaving any real
-    remediation history untouched."""
+    remediation history untouched. Like seeding, this only affects the
+    worker process that handles this request."""
     removed = remediation.clear_demo_data()
     return jsonify({
         "removed": removed,
