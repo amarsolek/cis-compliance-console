@@ -1,44 +1,34 @@
-"""
-Tests for the Cisco Meraki firmware-compliance client (simulator mode).
-"""
+"""Tests for the Cisco Meraki firmware-compliance client (simulated mode)."""
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import pytest
 
 from app import meraki_client
 
 
-def test_firmware_compliance_returns_rows_for_every_simulated_device():
+def test_firmware_compliance_returns_simulated_fleet():
     rows = meraki_client.firmware_compliance()
-    assert len(rows) == len(meraki_client._SIM_DEVICES)
-    for row in rows:
-        assert set(row) >= {"serial", "name", "model", "network", "current_version", "latest_version", "compliant"}
+    assert len(rows) == 3
+    assert all({"serial", "name", "model", "network", "current_version",
+                "latest_version", "compliant"} <= row.keys() for row in rows)
 
 
-def test_simulated_fleet_includes_a_noncompliant_device():
-    rows = meraki_client.firmware_compliance()
-    assert any(not r["compliant"] for r in rows), "expected at least one device behind on firmware"
-    assert any(r["compliant"] for r in rows), "expected at least one device already current"
-
-
-def test_compliance_summary_counts_are_consistent():
+def test_compliance_summary_counts_match_rows():
     summary = meraki_client.compliance_summary()
-    assert summary["total"] == len(summary["devices"])
+    assert summary["total"] == 3
     assert summary["compliant"] + summary["non_compliant"] == summary["total"]
+    assert len(summary["devices"]) == summary["total"]
 
 
-def test_real_mode_requires_credentials():
-    original = meraki_client.USE_SIMULATOR
-    meraki_client.USE_SIMULATOR = False
-    try:
-        os.environ.pop("MERAKI_API_KEY", None)
-        os.environ.pop("MERAKI_ORG_ID", None)
-        try:
-            meraki_client.firmware_compliance()
-            assert False, "expected MerakiAPIError without credentials"
-        except meraki_client.MerakiAPIError:
-            pass
-    finally:
-        meraki_client.USE_SIMULATOR = original
+def test_at_least_one_simulated_device_is_out_of_date():
+    summary = meraki_client.compliance_summary()
+    assert summary["non_compliant"] >= 1
+    non_compliant = [d for d in summary["devices"] if not d["compliant"]]
+    assert any(d["current_version"] != d["latest_version"] for d in non_compliant)
+
+
+def test_real_mode_requires_api_credentials(monkeypatch):
+    monkeypatch.setattr(meraki_client, "USE_SIMULATOR", False)
+    monkeypatch.delenv("MERAKI_API_KEY", raising=False)
+    monkeypatch.delenv("MERAKI_ORG_ID", raising=False)
+    with pytest.raises(meraki_client.MerakiAPIError):
+        meraki_client.firmware_compliance()

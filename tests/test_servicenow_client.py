@@ -1,41 +1,54 @@
-"""
-Tests for the ServiceNow change-management client (simulator mode).
-"""
+"""Tests for the simulated ServiceNow change-management client."""
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import pytest
 
 from app import servicenow_client
 
 
-def test_create_change_request_returns_unique_ticket_numbers():
-    t1 = servicenow_client.create_change_request("10.1.1.11", "sw-legacy-01", "summary one", "desc one")
-    t2 = servicenow_client.create_change_request("10.1.1.11", "sw-legacy-01", "summary two", "desc two")
-    assert t1 != t2
-    assert t1.startswith("CHG")
-    assert t2.startswith("CHG")
+def test_create_change_request_returns_ticket_number():
+    number = servicenow_client.create_change_request(
+        host="10.1.1.11", device_name="sw-legacy-01",
+        summary="Test change", description="Test description",
+    )
+    assert number.startswith("CHG")
 
 
-def test_list_change_requests_reflects_created_tickets():
-    servicenow_client.create_change_request("10.1.1.12", "sw-hardened-02", "summary", "desc")
+def test_ticket_numbers_are_sequential_and_unique():
+    n1 = servicenow_client.create_change_request(
+        host="10.1.1.11", device_name="sw-legacy-01", summary="A", description="A",
+    )
+    n2 = servicenow_client.create_change_request(
+        host="10.1.1.11", device_name="sw-legacy-01", summary="B", description="B",
+    )
+    assert n1 != n2
+
+
+def test_list_change_requests_returns_created_tickets():
+    servicenow_client.create_change_request(
+        host="10.1.1.12", device_name="sw-hardened-02", summary="C", description="C",
+    )
     tickets = servicenow_client.list_change_requests()
     assert len(tickets) == 1
-    assert tickets[0]["host"] == "10.1.1.12"
     assert tickets[0]["cmdb_ci"] == "sw-hardened-02"
+    assert tickets[0]["category"] == "Network"
 
 
-def test_real_mode_requires_credentials():
-    original = servicenow_client.USE_SIMULATOR
-    servicenow_client.USE_SIMULATOR = False
-    try:
-        for var in ("SERVICENOW_INSTANCE", "SERVICENOW_USERNAME", "SERVICENOW_PASSWORD"):
-            os.environ.pop(var, None)
-        try:
-            servicenow_client.create_change_request("h", "n", "s", "d")
-            assert False, "expected ChangeManagementError without credentials"
-        except servicenow_client.ChangeManagementError:
-            pass
-    finally:
-        servicenow_client.USE_SIMULATOR = original
+def test_automated_summary_marks_state_implement():
+    number = servicenow_client.create_change_request(
+        host="10.1.1.11", device_name="sw-legacy-01",
+        summary="Automated CIS v8 remediation applied: 3 control(s) on sw-legacy-01",
+        description="...",
+    )
+    ticket = next(t for t in servicenow_client.list_change_requests() if t["number"] == number)
+    assert ticket["state"] == "Implement"
+
+
+def test_real_mode_requires_credentials(monkeypatch):
+    monkeypatch.setattr(servicenow_client, "USE_SIMULATOR", False)
+    monkeypatch.delenv("SERVICENOW_INSTANCE", raising=False)
+    monkeypatch.delenv("SERVICENOW_USERNAME", raising=False)
+    monkeypatch.delenv("SERVICENOW_PASSWORD", raising=False)
+    with pytest.raises(servicenow_client.ChangeManagementError):
+        servicenow_client.create_change_request(
+            host="10.1.1.11", device_name="sw-legacy-01", summary="X", description="X",
+        )

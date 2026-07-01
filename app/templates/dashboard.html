@@ -53,6 +53,14 @@
 
     <div class="actions-row">
       <h2>Remediation Overview</h2>
+      <div>
+        {% if has_demo_data %}
+          <span class="sim-badge auto-badge" style="margin-right:8px;">DEMO DATA SEEDED</span>
+          <button class="btn-rescan" id="clearDemoBtn" onclick="clearDemoData()">Clear demo data</button>
+        {% elif simulator_mode %}
+          <button class="btn-rescan" id="seedDemoBtn" onclick="seedDemoData()">Seed 30 days of demo history</button>
+        {% endif %}
+      </div>
     </div>
     <div class="chart-panel">
       <div class="chart-card">
@@ -173,7 +181,7 @@
       # Severity weighting: high=5, medium=3, low=1. Weighted score = (earned weight / max weight) * 100.<br>
       # Click any device row for the full per-control breakdown, remediation history, and remediation snippets.<br>
       {% if auto_remediate %}# Auto-remediation is ON: safe/well-defined findings are fixed immediately and logged with a ServiceNow change request; everything else opens a change request for a network engineer.<br>{% endif %}
-      # API: GET /api/reports &middot; GET /api/controls &middot; POST /api/scan &middot; GET /api/remediations &middot; GET /api/remediation-summary &middot; GET/POST /api/weekly-report &middot; GET /api/meraki-compliance
+      # API: GET /api/reports &middot; GET /api/controls &middot; POST /api/scan &middot; GET /api/remediations &middot; GET /api/remediation-summary &middot; GET/POST /api/weekly-report &middot; GET /api/meraki-compliance &middot; POST /api/seed-demo-data &middot; POST /api/clear-demo-data
     </div>
 
   </div>
@@ -188,6 +196,34 @@
         window.location.reload();
       } catch (e) {
         btn.textContent = '↻ Re-scan failed — retry';
+        btn.disabled = false;
+      }
+    }
+
+    async function seedDemoData() {
+      const btn = document.getElementById('seedDemoBtn');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.textContent = 'Seeding…';
+      try {
+        await fetch('/api/seed-demo-data', { method: 'POST' });
+        window.location.reload();
+      } catch (e) {
+        btn.textContent = 'Seeding failed — retry';
+        btn.disabled = false;
+      }
+    }
+
+    async function clearDemoData() {
+      const btn = document.getElementById('clearDemoBtn');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.textContent = 'Clearing…';
+      try {
+        await fetch('/api/clear-demo-data', { method: 'POST' });
+        window.location.reload();
+      } catch (e) {
+        btn.textContent = 'Clear failed — retry';
         btn.disabled = false;
       }
     }

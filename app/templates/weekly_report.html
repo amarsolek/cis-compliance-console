@@ -16,11 +16,16 @@
     <div class="device-header">
       <div>
         <h1>Weekly Remediation Report</h1>
-        <div class="device-meta">
-          Trailing {{ report.window_days }} day(s) &middot; generated {{ report.generated_at }}
+        <div class="report-meta">Generated {{ report.generated_at }} &middot; trailing {{ report.window_days }} day(s)
           {% if simulator_mode %}<span class="sim-badge">SIMULATED FLEET</span>{% endif %}
         </div>
       </div>
+    </div>
+
+    <div class="report-range-links">
+      <a href="/reports/weekly?days=7" class="{% if report.window_days == 7 %}active{% endif %}">7 days</a>
+      <a href="/reports/weekly?days=30" class="{% if report.window_days == 30 %}active{% endif %}">30 days</a>
+      <a href="/reports/weekly?days=90" class="{% if report.window_days == 90 %}active{% endif %}">90 days</a>
     </div>
 
     <div class="summary-strip" style="grid-template-columns: repeat(3, 1fr);">
@@ -29,7 +34,7 @@
         <div class="value">{{ report.total_actions }}</div>
       </div>
       <div class="summary-cell">
-        <div class="label">Auto-Remediated</div>
+        <div class="label">Auto-Fixed</div>
         <div class="value pass">{{ report.total_auto_applied }}</div>
       </div>
       <div class="summary-cell">
@@ -39,20 +44,16 @@
     </div>
 
     <div class="actions-row">
-      <h2>By Device</h2>
-      <div>
-        <a href="/reports/weekly?days=7" class="nav-link">7d</a> &middot;
-        <a href="/reports/weekly?days=30" class="nav-link">30d</a> &middot;
-        <a href="/reports/weekly?days=90" class="nav-link">90d</a>
-      </div>
+      <h2>By Device Hostname</h2>
     </div>
 
     <table class="fleet-table">
       <thead>
         <tr>
           <th>Device</th>
+          <th>Host</th>
           <th>Auto-Fixed</th>
-          <th>Pending Engineer Action</th>
+          <th>Pending</th>
           <th>Controls Fixed</th>
           <th>Controls Pending</th>
           <th>Change Tickets</th>
@@ -60,11 +61,9 @@
       </thead>
       <tbody>
         {% for d in report.devices %}
-        <tr class="device-row" onclick="window.location.href='/device/{{ d.host }}'">
-          <td>
-            <div class="device-name">{{ d.name }}</div>
-            <div class="device-host">{{ d.host }}</div>
-          </td>
+        <tr>
+          <td class="device-name">{{ d.name }}</td>
+          <td class="device-host">{{ d.host }}</td>
           <td class="fail-count"><span class="n">{{ d.auto_applied }}</span></td>
           <td class="fail-count"><span class="n">{{ d.manual_pending }}</span></td>
           <td class="control-id">{{ d.controls_fixed | join(', ') or '—' }}</td>
@@ -72,16 +71,15 @@
           <td class="control-id">{{ d.change_tickets | join(', ') or '—' }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" style="text-align:center; color: var(--text-muted); padding: 24px;">No remediation activity in this window.</td></tr>
+        <tr><td colspan="7" style="color: var(--text-muted);">No remediation activity in this window.</td></tr>
         {% endfor %}
       </tbody>
     </table>
 
-    <div class="footer-note">
-      # Weekly email delivery: {% if email_configured %}<span style="color: var(--pass);">SMTP configured</span>{% else %}<span style="color: var(--sev-medium);">SIMULATED (no SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD set — see README)</span>{% endif %}<br>
-      # Distribution list: {{ distribution_list | join(', ') if distribution_list else 'not set (EMAIL_DISTRIBUTION_LIST)' }}<br>
-      # This report is sent automatically every Monday when ENABLE_SCHEDULER=true, or on demand via POST /api/weekly-report — recommended for spin-down-capable hosts like Render's free tier (see README).<br>
-      # API: GET /api/weekly-report?days=N &middot; POST /api/weekly-report (computes and emails now)
+    <div class="email-status">
+      # Weekly email delivery: {% if email_configured %}SMTP configured{% else %}not configured — set SMTP_HOST / SMTP_USERNAME / SMTP_PASSWORD to send for real, otherwise sends run in simulator mode{% endif %}<br>
+      # Distribution list: {{ distribution_list | join(', ') if distribution_list else 'not set — configure REPORT_RECIPIENTS' }}<br>
+      # Trigger a send now: POST /api/weekly-report (an external scheduler, e.g. a Render Cron Job, should call this weekly)
     </div>
 
   </div>

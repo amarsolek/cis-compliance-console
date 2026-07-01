@@ -334,7 +334,8 @@ MANUAL_REVIEW_REASON = {
 }
 
 
-def is_auto_remediable(control_id: str) -> bool:    return control_id in AUTO_REMEDIABLE
+def is_auto_remediable(control_id: str) -> bool:
+    return control_id in AUTO_REMEDIABLE
 
 
 def get_fix_fn(control_id: str):

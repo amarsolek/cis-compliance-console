@@ -14,17 +14,25 @@ Every remediation action -- auto or manual -- is logged in-memory here for
 the weekly report and the dashboard charts (app/reporting.py). Manual
 findings are deduplicated per (host, control_id) so a still-unresolved
 issue doesn't open a fresh ServiceNow ticket on every scan.
+
+This module also offers seed_demo_trend(), which backfills clearly-labeled
+synthetic history so the dashboard's charts have something to show
+immediately after a fresh deploy or a Render free-tier cold start, before
+a real scan has had a chance to run. See its docstring for details.
 """
 
+import random as _random
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone, timedelta
 
 from app import device_client, servicenow_client
-from app.checks.cis_v8_rules import run_all_checks
+from app.checks.cis_v8_rules import run_all_checks, RULES
 from app.checks.cis_v8_fixes import is_auto_remediable, manual_review_reason
 
 _REMEDIATION_LOG: list = []          # append-only audit log, all runs
 _OPEN_MANUAL_TICKETS: dict = {}      # (host, control_id) -> change_ticket number
+
+DEMO_NOTE_PREFIX = "[DEMO]"
 
 
 @dataclass
@@ -171,6 +179,80 @@ def remediations_since(days: int = 7) -> list:
         if ts >= cutoff:
             out.append(r)
     return out
+
+
+def seed_demo_trend(days: int = 30, seed: int = 42) -> int:
+    """
+    Backfill synthetic, clearly-labeled remediation history for the
+    trailing `days` days (not including today), so the dashboard's pie
+    chart and 30-day trend line have something to show immediately --
+    useful right after a fresh deploy or a Render free-tier cold start,
+    where the real in-memory remediation log is empty until an actual
+    scan has run at least once.
+
+    Every synthetic record is tagged with a "[DEMO]" note prefix (and a
+    "CHG-DEMO-####" ticket number) so it's never mistaken for a real
+    remediation event or a real ServiceNow ticket. This only touches this
+    module's own display log -- it never touches actual device config or
+    app/servicenow_client.py's real ticket queue.
+
+    Returns the number of synthetic records added.
+    """
+    rng = _random.Random(seed)
+    hosts = [
+        ("10.1.1.11", "sw-legacy-01"),
+        ("10.1.1.13", "sw-partial-03"),
+        ("10.1.1.12", "sw-hardened-02"),
+    ]
+    # Rule objects (app/checks/cis_v8_rules.py) don't carry a remediation
+    # CLI snippet themselves -- that only exists on a CheckResult produced
+    # by actually running the check against a config. For seeded demo
+    # records there's no real "before" config to check, so we use each
+    # rule's description as stand-in remediation guidance text.
+    control_pool = [(r.control_id, r.title, r.severity, r.cis_safeguard, r.description) for r in RULES]
+
+    now = datetime.now(timezone.utc)
+    added = 0
+
+    for day_offset in range(days, 0, -1):
+        day = now - timedelta(days=day_offset)
+        # Front-loaded activity: a burst of remediation early on, tapering
+        # to occasional maintenance as the fleet becomes compliant --
+        # tells a more realistic story than a flat random spread.
+        progress = 1 - (day_offset / days)  # 0 near day -days, -> 1 near today
+        auto_count = max(0, round(rng.gauss(6 * (1 - progress) + 0.3, 1.5)))
+        manual_count = max(0, round(rng.gauss(2 * (1 - progress) + 0.1, 0.8)))
+
+        for action, count in (("auto_applied", auto_count), ("manual_pending", manual_count)):
+            for _ in range(count):
+                host, name = rng.choice(hosts)
+                cid, title, severity, safeguard, remediation_text = rng.choice(control_pool)
+                ts = day.replace(hour=rng.randint(6, 20), minute=rng.randint(0, 59),
+                                  second=0, microsecond=0)
+                rec = RemediationRecord(
+                    host=host, name=name, control_id=cid, title=title, severity=severity,
+                    cis_safeguard=safeguard, evidence_before="(seeded demo evidence -- not from a real scan)",
+                    action=action, remediation_text=remediation_text,
+                    applied_at=ts.isoformat(timespec="seconds"),
+                    change_ticket=f"CHG-DEMO-{rng.randint(1000, 9999)}",
+                    note=f"{DEMO_NOTE_PREFIX} Synthetic history seeded for display purposes -- not a real remediation event.",
+                ).to_dict()
+                _REMEDIATION_LOG.append(rec)
+                added += 1
+
+    _REMEDIATION_LOG.sort(key=lambda r: r["applied_at"])
+    return added
+
+
+def has_demo_data() -> bool:
+    return any(r.get("note", "").startswith(DEMO_NOTE_PREFIX) for r in _REMEDIATION_LOG)
+
+
+def clear_demo_data() -> int:
+    """Remove only the synthetic seeded records, leaving real ones intact."""
+    before = len(_REMEDIATION_LOG)
+    _REMEDIATION_LOG[:] = [r for r in _REMEDIATION_LOG if not r.get("note", "").startswith(DEMO_NOTE_PREFIX)]
+    return before - len(_REMEDIATION_LOG)
 
 
 def reset():

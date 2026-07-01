@@ -1,31 +1,22 @@
 """
 Shared pytest fixtures.
 
-The new modules (remediation, servicenow_client, email_client, and the
-simulator's live per-host config) all use module-level in-memory state --
-the same pattern server.py's _LAST_SCAN cache already used. That's fine at
-runtime but means tests must reset it between cases, or one test's
-remediation actions (ServiceNow tickets, mutated simulated configs) leak
-into the next.
+Every module in this app that carries in-memory state (the simulated
+device fleet, the remediation audit log, the simulated ServiceNow ticket
+queue, the simulated email send log) needs to be reset between tests --
+otherwise a record created by one test bleeds into the next test's
+assertions. This autouse fixture does that reset before every test runs,
+so individual test files don't have to remember to do it themselves.
 """
 
-import os
-import sys
+import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-os.environ.setdefault("USE_SIMULATOR", "true")
-os.environ.setdefault("USE_SERVICENOW_SIMULATOR", "true")
-os.environ.setdefault("USE_MERAKI_SIMULATOR", "true")
-
-import pytest  # noqa: E402
-
-from app import remediation, servicenow_client, email_client  # noqa: E402
-from simulator import mock_device  # noqa: E402
+from app import remediation, servicenow_client, email_client
+from simulator import mock_device
 
 
 @pytest.fixture(autouse=True)
-def _reset_module_state():
+def _reset_all_state():
     remediation.reset()
     servicenow_client.reset()
     email_client.reset()

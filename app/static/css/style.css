@@ -397,48 +397,13 @@ code, .mono { font-family: var(--mono); }
   margin-bottom: 20px;
 }
 
-@media (max-width: 720px) {
-  .summary-strip { grid-template-columns: repeat(2, 1fr); }
-  .control-row { grid-template-columns: 70px 1fr 70px; }
-  .fleet-table { font-size: 13px; }
-}
-
-/* ---------- Remediation charts ---------- */
+/* ---------- Remediation / automation additions ---------- */
 
 .nav-link {
-  font-family: var(--mono);
   font-size: 12px;
+  font-family: var(--mono);
 }
 
 .sim-badge.auto-badge {
-  color: var(--pass);
-  border-color: var(--pass);
   background: var(--pass-bg);
-}
-
-.chart-panel {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 16px;
-  margin-bottom: 28px;
-}
-
-.chart-card {
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  padding: 16px 18px;
-}
-
-.chart-title {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-faint);
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-
-@media (max-width: 900px) {
-  .chart-panel { grid-template-columns: 1fr; }
-}
+  c

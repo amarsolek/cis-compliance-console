@@ -85,6 +85,7 @@ def dashboard():
         auto_remediate=AUTO_REMEDIATE,
         remediation_breakdown=reporting.remediation_status_breakdown(),
         remediation_trend=reporting.remediation_trend(days=30),
+        has_demo_data=remediation.has_demo_data(),
         meraki=meraki_summary,
         meraki_simulator_mode=meraki_client.USE_SIMULATOR,
     )
@@ -155,6 +156,40 @@ def api_remediations():
 def api_remediation_summary():
     """Pie (status breakdown) + line (30-day trend) data for the dashboard charts."""
     return jsonify({
+        "breakdown": reporting.remediation_status_breakdown(),
+        "trend": reporting.remediation_trend(days=30),
+        "has_demo_data": remediation.has_demo_data(),
+    })
+
+
+@app.route("/api/seed-demo-data", methods=["POST"])
+def api_seed_demo_data():
+    """
+    Backfill 30 days of clearly-labeled synthetic remediation history so
+    the dashboard's pie/line charts have something to show immediately --
+    handy right after a fresh deploy, or on Render's free tier where a
+    cold start wipes the in-memory remediation log. Simulator-only: this
+    is a display aid, not something that should ever run against a real
+    fleet's history.
+    """
+    if not device_client.USE_SIMULATOR:
+        return jsonify({"error": "Demo data seeding is only available in simulator mode (USE_SIMULATOR=true)."}), 403
+    days = int(request.args.get("days", 30))
+    added = remediation.seed_demo_trend(days=days)
+    return jsonify({
+        "added": added,
+        "breakdown": reporting.remediation_status_breakdown(),
+        "trend": reporting.remediation_trend(days=30),
+    })
+
+
+@app.route("/api/clear-demo-data", methods=["POST"])
+def api_clear_demo_data():
+    """Remove only the synthetic demo records seeded above, leaving any real
+    remediation history untouched."""
+    removed = remediation.clear_demo_data()
+    return jsonify({
+        "removed": removed,
         "breakdown": reporting.remediation_status_breakdown(),
         "trend": reporting.remediation_trend(days=30),
     })

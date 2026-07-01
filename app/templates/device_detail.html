@@ -35,26 +35,22 @@
     {% if device_remediations %}
     <div class="control-group">
       <div class="control-group-title">Remediation History ({{ device_remediations | length }})</div>
-      {% for rec in device_remediations | sort(attribute='applied_at', reverse=True) %}
+      {% for rec in device_remediations %}
       <div class="control-row">
-        <span class="control-tag {% if rec.action == 'auto_applied' %}pass{% else %}fail{% endif %}">
-          {% if rec.action == 'auto_applied' %}FIXED{% elif rec.action == 'attempt_failed' %}RETRY{% else %}OPEN{% endif %}
+        <span class="control-tag {% if rec.action == 'auto_applied' %}pass{% elif rec.action == 'attempt_failed' %}fail{% else %}warn{% endif %}">
+          {% if rec.action == 'auto_applied' %}FIXED{% elif rec.action == 'attempt_failed' %}FAILED{% else %}PENDING{% endif %}
         </span>
         <div class="control-body">
           <div class="control-title">
             {{ rec.title }}
             <span class="severity-pill {{ rec.severity }}">{{ rec.severity }}</span>
+            {% if rec.note.startswith('[DEMO]') %}<span class="sim-badge">DEMO</span>{% endif %}
           </div>
-          <div class="control-id">{{ rec.control_id }} &middot; {{ rec.applied_at }} &middot; change ticket {{ rec.change_ticket or '—' }}</div>
-          <div class="control-evidence">{{ rec.evidence_before }}</div>
-          {% if rec.action == 'auto_applied' %}
+          <div class="control-id">{{ rec.control_id }} &middot; CIS v8 Safeguard {{ rec.cis_safeguard }} &middot; {{ rec.applied_at }}</div>
+          {% if rec.change_ticket %}<div class="control-evidence">Change ticket: {{ rec.change_ticket }}</div>{% endif %}
+          {% if rec.remediation_text %}
           <div class="control-remediation">
-            <div class="remediation-label">Applied automatically</div>
-            <pre>{{ rec.remediation_text }}</pre>
-          </div>
-          {% else %}
-          <div class="control-remediation">
-            <div class="remediation-label">Awaiting engineer action{% if rec.note %} &mdash; {{ rec.note }}{% endif %}</div>
+            <div class="remediation-label">{% if rec.action == 'auto_applied' %}Applied{% else %}Proposed{% endif %} configuration change</div>
             <pre>{{ rec.remediation_text }}</pre>
           </div>
           {% endif %}
@@ -113,8 +109,7 @@
 
     <div class="footer-note">
       # Evidence lines are extracted directly from `show running-config` text.<br>
-      # Remediation snippets are suggested CLI; review before applying to a live device.<br>
-      # API: GET /api/remediations?host={{ report.host }}
+      # Remediation snippets are suggested CLI; review before applying to a live device.
     </div>
 
   </div>
